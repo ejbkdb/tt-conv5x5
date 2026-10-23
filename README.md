@@ -1,8 +1,8 @@
 ![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
 
-# 7x7 Conv, 1→128 Channels, Hardwired Weights
+# 5x5 Conv, 1→64 Channels, Hardwired Weights
 
-A 7×7 int8 convolution with 1 input channel and 128 output channels, for [Tiny Tapeout](https://tinytapeout.com). The 128 filters (6,272 weights) are synthesized into logic, so they're fixed at tapeout. The host streams a grayscale image in, one column of 7 pixels at a time. For every output pixel the chip returns 128 exact signed 21-bit sums. A 1048×1048 image produces a 1048×1048×128 output.
+A 5×5 int8 convolution with 1 input channel and 64 output channels, for [Tiny Tapeout](https://tinytapeout.com). The 64 filters (1,600 weights) are synthesized into logic, so they're fixed at tapeout. The host streams a grayscale image in, one column of 5 pixels at a time. For every output pixel the chip returns 64 exact signed 20-bit sums. A 1048×1048 image produces a 1048×1048×64 output.
 
 - [Datasheet: how it works, pinout, and how to test](docs/info.md)
 
@@ -10,16 +10,16 @@ A 7×7 int8 convolution with 1 input channel and 128 output channels, for [Tiny 
 
 | Path | What it is |
 |---|---|
-| `src/project.v` | Top module `tt_um_ejborcherding_conv7x7`: column buffer, 7×7 window, MAC engine, result handshake |
-| `src/weights_rom.v` | **Generated.** The 128×7×7 weight ROM. Do not edit by hand |
+| `src/project.v` | Top module `tt_um_ejborcherding_conv7x7`: column buffer, 5×5 window, MAC engine, result handshake |
+| `src/weights_rom.v` | **Generated.** The 64×5×5 weight ROM. Do not edit by hand |
 | `tools/gen_weights.py` | Writes `src/weights_rom.v` and `test/weights.npy` from your weights |
 | `test/test.py` | Cocotb tests, including a host model that tiles an image, checked against a NumPy reference |
-| `test/weights.npy` | **Generated.** The same weights, shape (128, 7, 7), used by the tests |
+| `test/weights.npy` | **Generated.** The same weights, shape (64, 5, 5), used by the tests |
 | `info.yaml` | Tiny Tapeout project config (3x2 tiles, 25 MHz) |
 
 ## Putting in your own filters
 
-The repo ships with random weights (seed 1). To use real ones, write a Python function that returns an integer array of shape `(128, 7, 7)` indexed `[f, ky, kx]` with values in `[-128, 127]`:
+The repo ships with random weights (seed 1). To use real ones, write a Python function that returns an integer array of shape `(64, 5, 5)` indexed `[f, ky, kx]` with values in `[-128, 127]`:
 
 ```python
 # my_filters.py
@@ -36,7 +36,7 @@ Then regenerate:
 python tools/gen_weights.py --func my_filters:make_filter
 ```
 
-The generator also accepts PyTorch's `nn.Conv2d(1, 128, 7).weight` layout `(128, 1, 7, 7)` and the TensorFlow/Keras layout `(7, 7, 1, 128)`, and converts them automatically. Other sources:
+The generator also accepts PyTorch's `nn.Conv2d(1, 64, 5).weight` layout `(64, 1, 5, 5)` and the TensorFlow/Keras layout `(5, 5, 1, 64)`, and converts them automatically. Other sources:
 
 ```bash
 python tools/gen_weights.py --seed 42             # different random weights
@@ -55,11 +55,11 @@ cd test
 make
 ```
 
-Ten tests cover single windows, worst-case sums, ROM ordering, sliding along a row band, a small image end to end with "same" padding, a slow host, backpressure, restarting with START, and the error flag. They take about 90 seconds.
+Ten tests cover single windows, worst-case sums, ROM ordering, sliding along a row band, a small image end to end with "same" padding, a slow host, backpressure, restarting with START, and the error flag. They take about 15 seconds.
 
 ## Size
 
-The previous 128→1 version came to about 6,700 Sky130 cells and 0.039 mm² of cell area. This version adds a 49-byte window and a 7-byte column buffer, about 450 flip-flops, plus the window read mux. A generic Yosys synthesis grows from about 8,200 to 9,900 gates. Expect roughly 0.05–0.06 mm² in Sky130, which is about half of a 3x2 slot (about 0.108 mm²). A 2x2 slot is now unlikely to fit.
+A 7×7×128 version of this design reached 83% utilization of a 3x2 slot after timing repair and did not route (hundreds of thousands of detailed-routing violations). A 7×7×64 version reached 65% utilization but needed about 132% of the available routing tracks. This 5×5×64 version reaches only 42% utilization and 87% global-routing demand, but detailed routing still stalls at about 28,500 violations. The limit is wiring, not area: the gate-built ROM and the 25:1 window mux concentrate too many wires in one place. An RTL restructure is planned.
 
 The GitHub Actions `gds` workflow runs the real place-and-route. It is the final check that the design fits and meets timing at 25 MHz (`CLOCK_PERIOD` 40 ns in `src/config.json`).
 
@@ -69,4 +69,4 @@ The GitHub Actions `gds` workflow runs the real place-and-route. It is the final
 2. Make sure the `gds`, `docs` and `test` workflows pass.
 3. Submit the repo on [app.tinytapeout.com](https://app.tinytapeout.com) for the shuttle you want.
 
-The module name includes `ejborcherding`. Tiny Tapeout asks for your GitHub username there, so rename `tt_um_ejborcherding_conv7x7` in `src/project.v`, `test/tb.v` and `info.yaml` if yours differs.
+The module name includes `ejborcherding`. Tiny Tapeout asks for your GitHub username there, so rename `tt_um_ejborcherding_conv7x7` in `src/project.v`, `test/tb.v` and `info.yaml` if yours differs. (The name still says 7x7 from the original design; the kernel is now 5×5.)

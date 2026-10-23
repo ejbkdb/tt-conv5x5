@@ -1,9 +1,9 @@
 # Tiny Tapeout project information
 project:
-  title:        "7x7 Conv 1->128 Hardwired Engine"      # Project title
+  title:        "5x5 Conv 1->64 Hardwired Engine"      # Project title
   author:       "EJ Borcherding"      # Your name
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "Int8 7x7 convolution, 1 input to 128 output channels, weights hardwired in a logic ROM; stream image columns in, read 128 exact sums per pixel"      # One line description of what your project does
+  description:  "Int8 5x5 convolution, 1 input to 64 output channels, weights hardwired in a logic ROM; stream image columns in, read 64 exact sums per pixel"      # One line description of what your project does
   language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
   clock_hz:     25000000       # Clock frequency in Hz (or 0 if not applicable)
 

@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: © 2026 EJ Borcherding
 # SPDX-License-Identifier: Apache-2.0
 #
-# Tests for tt_um_ejborcherding_conv7x7: a 7x7 convolution with 1 input channel
-# and 128 output channels. Checks the chip against a NumPy reference using
+# Tests for tt_um_ejborcherding_conv7x7: a 5x5 convolution with 1 input channel
+# and 64 output channels. Checks the chip against a NumPy reference using
 # test/weights.npy, which tools/gen_weights.py writes alongside
 # src/weights_rom.v. Only top-level pins are used, so the same tests also run
 # on the gate-level netlist.
@@ -16,30 +16,30 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, FallingEdge, First, RisingEdge, Timer
 
-NF, K = 128, 7
+NF, K = 64, 5
 VALID, START, ACK = 0x01, 0x02, 0x10
 IN_RDY, ERR, OUT_VALID = 0x20, 0x40, 0x80
 
 W = np.load(os.path.join(os.path.dirname(__file__), "weights.npy")).astype(np.int64)
-assert W.shape == (NF, K, K), W.shape  # w[f, ky, kx]; ROM address f*49 + ky*7 + kx
+assert W.shape == (NF, K, K), W.shape  # w[f, ky, kx]; ROM address f*25 + ky*5 + kx
 W_FLAT = W.reshape(NF, K * K)
 
 
 # ------------------------------------------------------------ reference model
 
 def ref_window(x):
-    """The 128 filter outputs for one 7x7 window."""
+    """The 64 filter outputs for one 5x5 window."""
     return W_FLAT @ np.asarray(x, dtype=np.int64).reshape(K * K)
 
 
 def ref_band(band):
-    """Outputs for a (7, n) row band: one pixel per window position, shape (n-6, 128)."""
+    """Outputs for a (K, n) row band: one pixel per window position, shape (n-K+1, 64)."""
     band = np.asarray(band)
     return np.array([ref_window(band[:, ox:ox + K]) for ox in range(band.shape[1] - K + 1)])
 
 
 def ref_image(img):
-    """'Same' convolution of an (H, W) image with zero padding: shape (H, W, 128)."""
+    """'Same' convolution of an (H, W) image with zero padding: shape (H, W, 64)."""
     img = np.asarray(img, dtype=np.int64)
     p = np.pad(img, K // 2)
     out = np.zeros(img.shape + (NF,), dtype=np.int64)
@@ -53,7 +53,7 @@ def ref_image(img):
 # ------------------------------------------------------------ host side model
 
 def band_stream(band):
-    """Bytes for a (7, n) row band: columns left to right, each column top to
+    """Bytes for a (K, n) row band: columns left to right, each column top to
     bottom, with START on the very first byte. Returns [(byte, start), ...]."""
     band = np.asarray(band)
     assert band.shape[0] == K
@@ -134,11 +134,11 @@ async def run_host(dut, stream, n_results, read=True, feed_gap=0.0, ack_gap=0.0)
 
 
 def check(results, expected):
-    """Compare host results with expected outputs of shape (..., 128)."""
+    """Compare host results with expected outputs of shape (..., 64)."""
     expected = np.asarray(expected).reshape(-1, NF)
     assert len(results) == expected.size, f"got {len(results)} results, expected {expected.size}"
     filts = [f for f, _ in results]
-    assert filts == list(range(NF)) * len(expected), "results not in filter order 0..127 per pixel"
+    assert filts == list(range(NF)) * len(expected), "results not in filter order 0..NF-1 per pixel"
     got = np.array([v for _, v in results]).reshape(-1, NF)
     bad = np.argwhere(got != expected)
     if bad.size:
@@ -199,7 +199,7 @@ async def test_unit_vectors(dut):
     """A single 1 at tap (ky, kx) must return w[f, ky, kx] for every filter
     (checks ROM order and where each byte lands in the window)."""
     await setup(dut)
-    taps = [(0, 0), (0, 6), (1, 0), (3, 3), (6, 0), (6, 6)]
+    taps = [(0, 0), (0, K - 1), (1, 0), (K // 2, K // 2), (K - 1, 0), (K - 1, K - 1)]
     windows = []
     for ky, kx in taps:
         x = np.zeros((K, K), dtype=np.int64)
@@ -212,12 +212,12 @@ async def test_unit_vectors(dut):
 
 @cocotb.test()
 async def test_sliding_band(dut):
-    """After the first 7 columns, every further column of 7 bytes yields one pixel."""
+    """After the first K columns, every further column of K bytes yields one pixel."""
     await setup(dut)
     band = rand_pixels(np.random.default_rng(11), (K, 11))
     stream = band_stream(band)
-    assert len(stream) == 7 * 11
-    results = await run_host(dut, stream, NF * 5)
+    assert len(stream) == K * 11
+    results = await run_host(dut, stream, NF * (11 - K + 1))
     check(results, ref_band(band))
     await expect_idle(dut)
 
@@ -236,10 +236,10 @@ async def test_image(dut):
 @cocotb.test()
 async def test_slow_host(dut):
     """A host that misses cycles on both sides. Reading slower than one result
-    per 49 clocks stalls the engine, which must not lose or corrupt results."""
+    per 25 clocks stalls the engine, which must not lose or corrupt results."""
     await setup(dut)
     random.seed(3)
-    band = rand_pixels(np.random.default_rng(13), (K, 8))
+    band = rand_pixels(np.random.default_rng(13), (K, K + 1))
     results = await run_host(dut, band_stream(band), NF * 2, feed_gap=0.5, ack_gap=0.985)
     check(results, ref_band(band))
     await expect_idle(dut)
@@ -250,7 +250,7 @@ async def test_backpressure(dut):
     """With nobody reading, the engine parks with one result waiting and the
     next column held in the buffer. Reading then resumes it with nothing lost."""
     await setup(dut)
-    band = rand_pixels(np.random.default_rng(14), (K, 8))
+    band = rand_pixels(np.random.default_rng(14), (K, K + 1))
     await run_host(dut, band_stream(band), 0, read=False)
     await ClockCycles(dut.clk, 3000)
     await FallingEdge(dut.clk)
@@ -269,9 +269,9 @@ async def test_restart(dut):
     await setup(dut)
     rng = np.random.default_rng(15)
     junk = band_stream(rand_pixels(rng, (K, 4)))
-    band = rand_pixels(rng, (K, 8))
+    band = rand_pixels(rng, (K, K + 1))
     window = rand_pixels(rng, (K, K))
-    stream = junk[:3] + junk[:7 * 4] + band_stream(band) + band_stream(window)
+    stream = junk[:3] + junk[:K * 3] + band_stream(band) + band_stream(window)
     results = await run_host(dut, stream, NF * 3)
     check(results, np.concatenate([ref_band(band), ref_window(window)[None]]))
     await expect_idle(dut)
@@ -290,7 +290,7 @@ async def test_error_flag(dut):
 
     await setup(dut)
     assert not flags(dut) & ERR, "reset did not clear ERR"
-    band = rand_pixels(np.random.default_rng(16), (K, 8))
+    band = rand_pixels(np.random.default_rng(16), (K, K + 1))
     await run_host(dut, band_stream(band), 0, read=False)
     assert not flags(dut) & IN_RDY
     dut.ui_in.value = 0x55
