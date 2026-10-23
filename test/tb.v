@@ -22,6 +22,11 @@ module tb ();
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
+
+  // Named status pins, so the test can wait on their edges (top-level pins only)
+  wire in_rdy    = uio_out[5];
+  wire err       = uio_out[6];
+  wire out_valid = uio_out[7];
 `ifdef GL_TEST
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
