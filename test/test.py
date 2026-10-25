@@ -21,7 +21,7 @@ VALID, START, ACK = 0x01, 0x02, 0x10
 IN_RDY, ERR, OUT_VALID = 0x20, 0x40, 0x80
 
 W = np.load(os.path.join(os.path.dirname(__file__), "weights.npy")).astype(np.int64)
-assert W.shape == (NF, K, K), W.shape  # w[f, ky, kx]; ROM address f*25 + ky*5 + kx
+assert W.shape == (NF, K, K), W.shape  # w[f, ky, kx]; ROM word f, tap ky*5 + kx
 W_FLAT = W.reshape(NF, K * K)
 
 
@@ -95,16 +95,22 @@ async def read_result(dut):
     return b[3], value
 
 
-async def run_host(dut, stream, n_results, read=True, feed_gap=0.0, ack_gap=0.0):
+async def run_host(dut, stream, n_results, read=True, feed_gap=0.0, ack_gap=0.0, max_clocks=2_000_000):
     """Act as the host. Feed `stream` while IN_RDY is high, and read and ACK
     every result until `n_results` have arrived. Inputs change on falling edges;
     the chip samples on rising edges. feed_gap / ack_gap are the per-cycle odds
     of the host skipping a cycle, to model a slow host. With no gaps, idle
     stretches are skipped by waiting on IN_RDY / OUT_VALID edges.
+    Fails if the work isn't done within max_clocks.
     Returns [(filter, value), ...] in arrival order."""
     results = []
     i = 0
+    clocks = 0
     while i < len(stream) or len(results) < n_results:
+        clocks += 1
+        assert clocks <= max_clocks, (
+            f"host gave up after {max_clocks} clocks: fed {i}/{len(stream)} bytes, "
+            f"read {len(results)}/{n_results} results")
         fl = flags(dut)
         can_feed = i < len(stream) and fl & IN_RDY
         has_out = read and fl & OUT_VALID

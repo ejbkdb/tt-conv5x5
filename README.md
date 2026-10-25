@@ -10,8 +10,8 @@ A 5×5 int8 convolution with 1 input channel and 64 output channels, for [Tiny T
 
 | Path | What it is |
 |---|---|
-| `src/project.v` | Top module `tt_um_ejborcherding_conv7x7`: column buffer, 5×5 window, MAC engine, result handshake |
-| `src/weights_rom.v` | **Generated.** The 64×5×5 weight ROM. Do not edit by hand |
+| `src/project.v` | Top module `tt_um_ejborcherding_conv7x7`: column buffer, pixel and weight rings, MAC engine, result handshake |
+| `src/weights_rom.v` | **Generated.** The weight ROM: one 200-bit word (25 weights) per filter. Do not edit by hand |
 | `tools/gen_weights.py` | Writes `src/weights_rom.v` and `test/weights.npy` from your weights |
 | `test/test.py` | Cocotb tests, including a host model that tiles an image, checked against a NumPy reference |
 | `test/weights.npy` | **Generated.** The same weights, shape (64, 5, 5), used by the tests |
@@ -59,7 +59,9 @@ Ten tests cover single windows, worst-case sums, ROM ordering, sliding along a r
 
 ## Size
 
-A 7×7×128 version of this design reached 83% utilization of a 3x2 slot after timing repair and did not route (hundreds of thousands of detailed-routing violations). A 7×7×64 version reached 65% utilization but needed about 132% of the available routing tracks. This 5×5×64 version reaches only 42% utilization and 87% global-routing demand, but detailed routing still stalls at about 28,500 violations. The limit is wiring, not area: the gate-built ROM and the 25:1 window mux concentrate too many wires in one place. An RTL restructure is planned.
+A 7×7×128 version of this design reached 83% utilization of a 3x2 slot after timing repair and did not route (hundreds of thousands of detailed-routing violations). A 7×7×64 version reached 65% utilization but needed about 132% of the available routing tracks. This 5×5×64 version reaches only 42% utilization and 87% global-routing demand, but detailed routing still stalls at about 28,500 violations. The limit was wiring, not area: the ROM (one mux tree on an 11-bit address) and the 25:1 window mux each sent hundreds of wires into one spot.
+
+The current datapath removes both. The window and the current filter's weights are two register rings that rotate past a fixed multiplier, and the ROM returns a whole filter per 6-bit address. Results, timing and pins are unchanged.
 
 The GitHub Actions `gds` workflow runs the real place-and-route. It is the final check that the design fits and meets timing at 25 MHz (`CLOCK_PERIOD` 40 ns in `src/config.json`).
 
