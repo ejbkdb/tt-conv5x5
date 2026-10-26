@@ -63,7 +63,25 @@ A 7×7×128 version of this design reached 83% utilization of a 3x2 slot after t
 
 The current datapath removes both. The window and the current filter's weights are two register rings that rotate past a fixed multiplier, and the ROM returns a whole filter per 6-bit address. Results, timing and pins are unchanged.
 
-The GitHub Actions `gds` workflow runs the real place-and-route. It is the final check that the design fits and meets timing at 25 MHz (`CLOCK_PERIOD` 40 ns in `src/config.json`).
+With that datapath the design routes in a 3x2 tile:
+
+| | |
+|---|---|
+| Standard cells | 6,145 (532 flip-flops), 44% utilization |
+| Global-route demand | 70.5% of available tracks |
+| Setup slack at 25 MHz | +20.3 ns (worst corner) |
+| Hold slack | +0.005 ns (fast corner, after the SDC's 0.25 ns clock uncertainty) |
+| DRC / LVS | 0 / 0 |
+| Antenna | 1 net |
+| Max-slew warnings | 1,924, mostly at the slow corner |
+| TT precheck | passes |
+| Gate-level tests | 10/10 pass on the routed netlist |
+
+Routing needs two settings in the editable part of `src/config.json`:
+- **Hold margins set to 0.** With the defaults (0.1 ns at placement), the flow packs about 650 hold buffers next to the I/O pins, which all sit on one short stretch of the top edge. That corner then can't route. The hold checks still include the 0.25 ns clock uncertainty from the Tiny Tapeout SDC.
+- **Wire repair after global routing**, with repaired wires capped at 250 µm.
+
+The GitHub Actions `gds` workflow runs the same place-and-route and is the final check (`CLOCK_PERIOD` 40 ns in `src/config.json`).
 
 ## Submitting
 
