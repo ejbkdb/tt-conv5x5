@@ -16,6 +16,7 @@ A 5×5 int8 convolution with 1 input channel and 64 output channels, for [Tiny T
 | `test/test.py` | Cocotb tests, including a host model that tiles an image, checked against a NumPy reference |
 | `test/weights.npy` | **Generated.** The same weights, shape (64, 5, 5), used by the tests |
 | `info.yaml` | Tiny Tapeout project config (3x2 tiles, 25 MHz) |
+| `docs/asic-status.html` | One-page overview: architecture, floorplan, place-and-route experiments and signoff results. Open it in a browser |
 
 ## Putting in your own filters
 
